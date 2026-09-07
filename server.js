@@ -41,6 +41,7 @@ app.use(
         verify: (req, res, buf) => {
             req.rawBody = Buffer.from(buf);
         },
+        strict: false,
     })
 );
 
