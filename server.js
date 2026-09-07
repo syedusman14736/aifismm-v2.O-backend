@@ -13,7 +13,15 @@ dotenv.config();
 
 const app = express();
 
+// ==========================================
+// DATABASE
+// ==========================================
+
 await connectDB();
+
+// ==========================================
+// CORS
+// ==========================================
 
 app.use(
     cors({
@@ -24,26 +32,27 @@ app.use(
     })
 );
 
-
 // ==========================================
-// JSON BODY + RAW BODY
+// JSON BODY PARSER
 // ==========================================
 
 app.use(
     express.json({
         verify: (req, res, buf) => {
-            req.rawBody =
-                Buffer.from(buf);
+            req.rawBody = Buffer.from(buf);
         },
     })
 );
+
+// ==========================================
+// URL ENCODED BODY
+// ==========================================
 
 app.use(
     express.urlencoded({
         extended: true,
     })
 );
-
 
 // ==========================================
 // HEALTH CHECK
@@ -52,14 +61,12 @@ app.use(
 app.get("/", (req, res) => {
     res.status(200).json({
         success: true,
-        message:
-            "AiFi SMM API is running",
+        message: "AiFi SMM API is running",
     });
 });
 
-
 // ==========================================
-// AUTH
+// AUTH ROUTES
 // ==========================================
 
 app.use(
@@ -67,9 +74,8 @@ app.use(
     authRoutes
 );
 
-
 // ==========================================
-// USER PAYMENTS
+// USER PAYMENT ROUTES
 // ==========================================
 
 app.use(
@@ -77,16 +83,14 @@ app.use(
     paymentRoutes
 );
 
-
 // ==========================================
-// ADMIN PAYMENTS
+// ADMIN PAYMENT ROUTES
 // ==========================================
 
 app.use(
     "/api/admin/payments",
     adminPaymentRoutes
 );
-
 
 // ==========================================
 // WHATSAPP WEBHOOK
@@ -97,16 +101,62 @@ app.use(
     whatsappWebhookRoutes
 );
 
+// ==========================================
+// 404 HANDLER
+// ==========================================
+
+app.use((req, res) => {
+    res.status(404).json({
+        success: false,
+        message: "Route not found",
+        path: req.originalUrl,
+    });
+});
+
+// ==========================================
+// GLOBAL ERROR HANDLER
+// ==========================================
+
+app.use((err, req, res, next) => {
+    console.error("==========================================");
+    console.error("❌ GLOBAL ERROR");
+    console.error("==========================================");
+    console.error(err);
+    console.error("==========================================");
+
+    // JSON parsing error
+    if (
+        err instanceof SyntaxError &&
+        err.status === 400 &&
+        "body" in err
+    ) {
+        return res.status(400).json({
+            success: false,
+            message: "Invalid JSON body",
+        });
+    }
+
+    res.status(err.status || 500).json({
+        success: false,
+        message:
+            err.message ||
+            "Internal Server Error",
+    });
+});
 
 // ==========================================
 // SERVER
 // ==========================================
 
 const PORT =
-    process.env.PORT || 5000;
+    process.env.PORT || 4040;
 
 app.listen(PORT, () => {
+    console.log("==========================================");
+    console.log("🚀 AiFi SMM Backend Started");
+    console.log(`📡 Port: ${PORT} `);
     console.log(
-        `🚀 Server running on port ${PORT}`
+        `🌐 Webhook: /api/webhook / whatsapp`
     );
+    console.log("==========================================");
 });
