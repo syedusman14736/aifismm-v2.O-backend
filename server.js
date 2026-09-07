@@ -33,17 +33,59 @@ app.use(
 );
 
 // ==========================================
-// JSON BODY PARSER
+// WHATSAPP WEBHOOK
 // ==========================================
+//
+// IMPORTANT:
+// WhatsApp webhook signature verification needs
+// the ORIGINAL raw request body.
+//
+// Therefore webhook route gets express.raw()
+// instead of the normal express.json() parser.
+//
 
 app.use(
-    express.json({
-        verify: (req, res, buf) => {
-            req.rawBody = Buffer.from(buf);
-        },
-        strict: false,
-    })
+    "/api/webhook/whatsapp",
+    express.raw({
+        type: "application/json",
+    }),
+    (req, res, next) => {
+        try {
+            // Preserve exact raw body for HMAC verification
+            req.rawBody = Buffer.isBuffer(req.body)
+                ? req.body
+                : Buffer.from("");
+
+            // Convert JSON buffer into object
+            if (req.rawBody.length > 0) {
+                req.body = JSON.parse(
+                    req.rawBody.toString("utf8")
+                );
+            } else {
+                req.body = {};
+            }
+
+            next();
+        } catch (error) {
+            console.error(
+                "❌ WhatsApp JSON Parse Error:",
+                error
+            );
+
+            return res.status(400).json({
+                success: false,
+                message: "Invalid JSON body",
+            });
+        }
+    },
+    whatsappWebhookRoutes
 );
+
+// ==========================================
+// NORMAL JSON BODY
+// ==========================================
+
+app.use(express.json());
 
 // ==========================================
 // URL ENCODED BODY
@@ -94,15 +136,6 @@ app.use(
 );
 
 // ==========================================
-// WHATSAPP WEBHOOK
-// ==========================================
-
-app.use(
-    "/api/webhook/whatsapp",
-    whatsappWebhookRoutes
-);
-
-// ==========================================
 // 404 HANDLER
 // ==========================================
 
@@ -119,25 +152,19 @@ app.use((req, res) => {
 // ==========================================
 
 app.use((err, req, res, next) => {
-    console.error("==========================================");
+    console.error(
+        "=========================================="
+    );
     console.error("❌ GLOBAL ERROR");
-    console.error("==========================================");
+    console.error(
+        "=========================================="
+    );
     console.error(err);
-    console.error("==========================================");
+    console.error(
+        "=========================================="
+    );
 
-    // JSON parsing error
-    if (
-        err instanceof SyntaxError &&
-        err.status === 400 &&
-        "body" in err
-    ) {
-        return res.status(400).json({
-            success: false,
-            message: "Invalid JSON body",
-        });
-    }
-
-    res.status(err.status || 500).json({
+    return res.status(err.status || 500).json({
         success: false,
         message:
             err.message ||
@@ -153,11 +180,19 @@ const PORT =
     process.env.PORT || 4040;
 
 app.listen(PORT, () => {
-    console.log("==========================================");
-    console.log("🚀 AiFi SMM Backend Started");
-    console.log(`📡 Port: ${PORT} `);
     console.log(
-        `🌐 Webhook: /api/webhook / whatsapp`
+        "=========================================="
     );
-    console.log("==========================================");
+    console.log(
+        "🚀 AiFi SMM Backend Started"
+    );
+    console.log(
+        `📡 Port: ${PORT} `
+    );
+    console.log(
+        "📱 WhatsApp Webhook: /api/webhook/whatsapp"
+    );
+    console.log(
+        "=========================================="
+    );
 });
