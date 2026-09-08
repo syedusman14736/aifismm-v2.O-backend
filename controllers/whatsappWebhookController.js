@@ -1,4 +1,3 @@
-
 import crypto from "crypto";
 
 import {
@@ -24,14 +23,9 @@ const normalizePhoneNumber = (number = "") => {
 
 export const verifyWhatsAppWebhook = (req, res) => {
     try {
-        const mode =
-            req.query["hub.mode"];
-
-        const token =
-            req.query["hub.verify_token"];
-
-        const challenge =
-            req.query["hub.challenge"];
+        const mode = req.query["hub.mode"];
+        const token = req.query["hub.verify_token"];
+        const challenge = req.query["hub.challenge"];
 
         const verifyToken =
             process.env.WHATSAPP_VERIFY_TOKEN;
@@ -62,6 +56,7 @@ export const verifyWhatsAppWebhook = (req, res) => {
         );
 
         return res.sendStatus(403);
+
     } catch (error) {
         console.error(
             "❌ WhatsApp Webhook Verification Error:",
@@ -74,7 +69,7 @@ export const verifyWhatsAppWebhook = (req, res) => {
 
 
 // ======================================================
-// VERIFY META SIGNATURE
+// VERIFY META WEBHOOK SIGNATURE
 // ======================================================
 
 const verifyWhatsAppSignature = (req) => {
@@ -90,6 +85,10 @@ const verifyWhatsAppSignature = (req) => {
             !appSecret ||
             !req.rawBody
         ) {
+            console.error(
+                "❌ WhatsApp signature data missing."
+            );
+
             return false;
         }
 
@@ -120,6 +119,7 @@ const verifyWhatsAppSignature = (req) => {
             receivedBuffer,
             expectedBuffer
         );
+
     } catch (error) {
         console.error(
             "❌ WhatsApp Signature Error:",
@@ -168,9 +168,8 @@ const isAdminWhatsAppNumber = (message) => {
             admin
         );
 
-        return (
-            sender === admin
-        );
+        return sender === admin;
+
     } catch (error) {
         console.error(
             "❌ Admin WhatsApp Verification Error:",
@@ -230,7 +229,7 @@ const isCorrectPhoneNumber = (value) => {
 
 
 // ======================================================
-// MAIN WEBHOOK HANDLER
+// MAIN WHATSAPP WEBHOOK
 // ======================================================
 
 export const handleWhatsAppWebhook = async (
@@ -238,13 +237,12 @@ export const handleWhatsAppWebhook = async (
     res
 ) => {
     try {
+
         // ------------------------------------------------
         // 1. VERIFY META SIGNATURE
         // ------------------------------------------------
 
-        if (
-            !verifyWhatsAppSignature(req)
-        ) {
+        if (!verifyWhatsAppSignature(req)) {
             console.error(
                 "❌ Invalid WhatsApp webhook signature."
             );
@@ -252,13 +250,13 @@ export const handleWhatsAppWebhook = async (
             return res.sendStatus(401);
         }
 
-        // ------------------------------------------------
-        // 2. ACKNOWLEDGE META IMMEDIATELY
-        // ------------------------------------------------
 
-        res.sendStatus(200);
+        // ------------------------------------------------
+        // 2. GET BODY
+        // ------------------------------------------------
 
         const body = req.body;
+
 
         console.log("");
         console.log(
@@ -279,43 +277,58 @@ export const handleWhatsAppWebhook = async (
             )
         );
 
+
         // ------------------------------------------------
         // 3. VERIFY OBJECT
         // ------------------------------------------------
 
         if (
-            body.object !==
+            body?.object !==
             "whatsapp_business_account"
         ) {
             console.warn(
                 "⚠️ Unknown webhook object."
             );
 
-            return;
+            return res.sendStatus(200);
         }
 
+
         // ------------------------------------------------
-        // 4. PROCESS ENTRIES
+        // 4. ENTRIES
         // ------------------------------------------------
 
         const entries =
-            body.entry || [];
+            Array.isArray(body.entry)
+                ? body.entry
+                : [];
 
-        for (
-            const entry of entries
-        ) {
+
+        // ------------------------------------------------
+        // 5. PROCESS ENTRIES
+        // ------------------------------------------------
+
+        for (const entry of entries) {
+
             const changes =
-                entry.changes || [];
+                Array.isArray(entry?.changes)
+                    ? entry.changes
+                    : [];
 
-            for (
-                const change of changes
-            ) {
+
+            // --------------------------------------------
+            // PROCESS CHANGES
+            // --------------------------------------------
+
+            for (const change of changes) {
+
                 const value =
-                    change.value;
+                    change?.value;
 
                 if (!value) {
                     continue;
                 }
+
 
                 // ----------------------------------------
                 // VERIFY PHONE NUMBER ID
@@ -333,31 +346,47 @@ export const handleWhatsAppWebhook = async (
                     continue;
                 }
 
+
                 // ----------------------------------------
-                // ONLY PROCESS MESSAGES
+                // ONLY MESSAGES
                 // ----------------------------------------
 
                 if (
-                    change.field !==
+                    change?.field !==
                     "messages"
                 ) {
                     console.log(
-                        "Webhook field:",
-                        change.field
+                        "ℹ️ Webhook field:",
+                        change?.field
                     );
 
                     continue;
                 }
 
-                const messages =
-                    value.messages || [];
 
                 // ----------------------------------------
-                // PROCESS EVERY MESSAGE
+                // NO MESSAGES
+                // ----------------------------------------
+
+                if (
+                    !Array.isArray(
+                        value.messages
+                    )
+                ) {
+                    console.log(
+                        "ℹ️ No messages array. Event ignored."
+                    );
+
+                    continue;
+                }
+
+
+                // ----------------------------------------
+                // PROCESS MESSAGES
                 // ----------------------------------------
 
                 for (
-                    const message of messages
+                    const message of value.messages
                 ) {
                     await processWhatsAppMessage(
                         message,
@@ -367,27 +396,54 @@ export const handleWhatsAppWebhook = async (
             }
         }
 
+
+        // ------------------------------------------------
+        // 6. ACKNOWLEDGE META
+        // ------------------------------------------------
+
         console.log(
             "=========================================="
         );
+
         console.log(
             "✅ WHATSAPP WEBHOOK PROCESSING COMPLETE"
         );
+
         console.log(
             "=========================================="
         );
+
         console.log("");
+
+        return res.sendStatus(200);
+
     } catch (error) {
+
         console.error(
-            "❌ WhatsApp Webhook Handler Error:",
-            error
+            "=========================================="
         );
+
+        console.error(
+            "❌ WhatsApp Webhook Handler Error:"
+        );
+
+        console.error(error);
+
+        console.error(
+            "=========================================="
+        );
+
+        if (!res.headersSent) {
+            return res.sendStatus(500);
+        }
+
+        return;
     }
 };
 
 
 // ======================================================
-// PROCESS INCOMING WHATSAPP MESSAGE
+// PROCESS WHATSAPP MESSAGE
 // ======================================================
 
 const processWhatsAppMessage = async (
@@ -395,6 +451,7 @@ const processWhatsAppMessage = async (
     value
 ) => {
     try {
+
         console.log("");
         console.log(
             "------------------------------------------"
@@ -423,22 +480,23 @@ const processWhatsAppMessage = async (
             "------------------------------------------"
         );
 
+
         // ==================================================
-        // ADMIN VERIFICATION
+        // ADMIN CHECK
         // ==================================================
 
-        const isAdmin =
-            isAdminWhatsAppNumber(
+        if (
+            !isAdminWhatsAppNumber(
                 message
-            );
-
-        if (!isAdmin) {
+            )
+        ) {
             console.warn(
                 "🚫 Message ignored: sender is NOT admin."
             );
 
             return;
         }
+
 
         console.log(
             "✅ ADMIN WHATSAPP MESSAGE VERIFIED"
@@ -450,39 +508,43 @@ const processWhatsAppMessage = async (
         // ==================================================
 
         if (
-            message.type ===
+            message?.type ===
             "text"
         ) {
-            const text =
-                message.text?.body || "";
-
             console.log(
                 "📝 Admin Text:",
-                text
+                message?.text?.body || ""
             );
+
+            // Future:
+            // whatsappMessageController
+            // whatsappChatController
 
             return;
         }
 
 
         // ==================================================
-        // QUICK REPLY BUTTON
+        // BUTTON DATA
         // ==================================================
 
         let payload = null;
-
         let buttonText = null;
 
 
+        // ==================================================
+        // LEGACY BUTTON
+        // ==================================================
+
         if (
-            message.type ===
+            message?.type ===
             "button"
         ) {
             buttonText =
-                message.button?.text;
+                message?.button?.text;
 
             payload =
-                message.button?.payload;
+                message?.button?.payload;
 
             console.log(
                 "🔘 Button Text:",
@@ -501,21 +563,24 @@ const processWhatsAppMessage = async (
         // ==================================================
 
         if (
-            message.type ===
+            message?.type ===
             "interactive"
         ) {
+
             const interactive =
-                message.interactive;
+                message?.interactive;
 
             console.log(
                 "Interactive Type:",
                 interactive?.type
             );
 
+
             if (
                 interactive?.type ===
                 "button_reply"
             ) {
+
                 buttonText =
                     interactive
                         ?.button_reply
@@ -525,6 +590,7 @@ const processWhatsAppMessage = async (
                     interactive
                         ?.button_reply
                         ?.id;
+
 
                 console.log(
                     "🔘 Interactive Button:",
@@ -561,10 +627,12 @@ const processWhatsAppMessage = async (
                 "approve_"
             )
         ) {
+
             const paymentId =
                 payload.substring(
                     "approve_".length
                 );
+
 
             if (!paymentId) {
                 console.error(
@@ -573,6 +641,7 @@ const processWhatsAppMessage = async (
 
                 return;
             }
+
 
             console.log("");
             console.log(
@@ -590,13 +659,17 @@ const processWhatsAppMessage = async (
 
             console.log(
                 "Admin:",
-                message.from
+                message?.from
             );
 
             console.log(
                 "=========================================="
             );
 
+
+            // --------------------------------------------
+            // APPROVE PAYMENT
+            // --------------------------------------------
 
             const result =
                 await approvePaymentById({
@@ -623,10 +696,12 @@ const processWhatsAppMessage = async (
                 "reject_"
             )
         ) {
+
             const paymentId =
                 payload.substring(
                     "reject_".length
                 );
+
 
             if (!paymentId) {
                 console.error(
@@ -635,6 +710,7 @@ const processWhatsAppMessage = async (
 
                 return;
             }
+
 
             console.log("");
             console.log(
@@ -652,12 +728,17 @@ const processWhatsAppMessage = async (
 
             console.log(
                 "Admin:",
-                message.from
+                message?.from
             );
 
             console.log(
-                "==========================================");
+                "=========================================="
+            );
 
+
+            // --------------------------------------------
+            // REJECT PAYMENT
+            // --------------------------------------------
 
             const result =
                 await rejectPaymentById({
@@ -687,9 +768,19 @@ const processWhatsAppMessage = async (
         );
 
     } catch (error) {
+
         console.error(
-            "❌ Process WhatsApp Message Error:",
-            error
+            "=========================================="
+        );
+
+        console.error(
+            "❌ Process WhatsApp Message Error:"
+        );
+
+        console.error(error);
+
+        console.error(
+            "=========================================="
         );
     }
 };
