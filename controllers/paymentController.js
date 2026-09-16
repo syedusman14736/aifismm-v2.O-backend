@@ -1,10 +1,54 @@
 import Payment from "../models/Payment.js";
 import User from "../models/User.js";
+
 import sendPaymentNotification from "../services/paymentWhatsappService.js";
+
 import {
     approvePaymentById,
     rejectPaymentById,
 } from "../services/paymentApprovalService.js";
+
+
+// ==========================================
+// PAYMENT METHOD CONFIGURATION
+// ==========================================
+//
+// This defines:
+// - Pakistan vs International
+// - Payment currency
+// - Minimum payment amount
+//
+// Later, this can be moved into a PaymentMethod
+// database model so admin can manage it dynamically.
+// ==========================================
+
+const PAYMENT_METHODS = {
+
+    easypaisa: {
+        region: "pakistan",
+        currency: "PKR",
+        minAmount: 100,
+    },
+
+    jazzcash: {
+        region: "pakistan",
+        currency: "PKR",
+        minAmount: 100,
+    },
+
+    bank: {
+        region: "pakistan",
+        currency: "PKR",
+        minAmount: 100,
+    },
+
+    other: {
+        region: "international",
+        currency: "USD",
+        minAmount: 0.01,
+    },
+};
+
 
 // ==========================================
 // CREATE ADD FUNDS REQUEST
@@ -18,9 +62,14 @@ export const createPayment = async (req, res) => {
             transactionId,
         } = req.body;
 
+        // ==========================================
+        // BASIC VALIDATION
+        // ==========================================
+
         if (
             !method ||
-            !amount ||
+            amount === undefined ||
+            amount === null ||
             !transactionId
         ) {
             return res.status(400).json({
@@ -31,29 +80,57 @@ export const createPayment = async (req, res) => {
         }
 
         const normalizedMethod =
-            method.trim().toLowerCase();
+            String(method)
+                .trim()
+                .toLowerCase();
 
         const normalizedTransactionId =
-            transactionId.trim();
+            String(transactionId).trim();
 
-        const numericAmount = Number(amount);
+        const numericAmount =
+            Number(amount);
+
+        // ==========================================
+        // VALIDATE PAYMENT METHOD
+        // ==========================================
+
+        const paymentMethod =
+            PAYMENT_METHODS[
+            normalizedMethod
+            ];
+
+        if (!paymentMethod) {
+            return res.status(400).json({
+                success: false,
+                message:
+                    "Invalid payment method.",
+            });
+        }
 
         // ==========================================
         // VALIDATE AMOUNT
         // ==========================================
 
-        if (!Number.isFinite(numericAmount)) {
-            return res.status(400).json({
-                success: false,
-                message: "Invalid amount.",
-            });
-        }
-
-        if (numericAmount < 100) {
+        if (
+            !Number.isFinite(
+                numericAmount
+            )
+        ) {
             return res.status(400).json({
                 success: false,
                 message:
-                    "Minimum add funds amount is PKR 100.",
+                    "Invalid amount.",
+            });
+        }
+
+        if (
+            numericAmount <
+            paymentMethod.minAmount
+        ) {
+            return res.status(400).json({
+                success: false,
+                message:
+                    `Minimum add funds amount is ${paymentMethod.currency} ${paymentMethod.minAmount}.`,
             });
         }
 
@@ -72,40 +149,19 @@ export const createPayment = async (req, res) => {
         }
 
         // ==========================================
-        // VALIDATE PAYMENT METHOD
-        // ==========================================
-
-        const allowedMethods = [
-            "easypaisa",
-            "jazzcash",
-            "bank",
-            "other",
-        ];
-
-        if (
-            !allowedMethods.includes(
-                normalizedMethod
-            )
-        ) {
-            return res.status(400).json({
-                success: false,
-                message:
-                    "Invalid payment method.",
-            });
-        }
-
-        // ==========================================
         // FIND USER
         // ==========================================
 
-        const user = await User.findById(
-            req.user._id
-        );
+        const user =
+            await User.findById(
+                req.user._id
+            );
 
         if (!user) {
             return res.status(404).json({
                 success: false,
-                message: "User not found.",
+                message:
+                    "User not found.",
             });
         }
 
@@ -113,7 +169,9 @@ export const createPayment = async (req, res) => {
         // CHECK USER STATUS
         // ==========================================
 
-        if (user.status !== "active") {
+        if (
+            user.status !== "active"
+        ) {
             return res.status(403).json({
                 success: false,
                 message:
@@ -142,14 +200,42 @@ export const createPayment = async (req, res) => {
         // ==========================================
         // CREATE PAYMENT
         // ==========================================
+        //
+        // IMPORTANT:
+        //
+        // amount = original amount user actually paid
+        //
+        // Pakistan:
+        // 1000 PKR
+        //
+        // International:
+        // 100 USD
+        //
+        // This amount is NOT converted here.
+        //
+        // Conversion happens only after admin approval.
+        //
+        // ==========================================
 
         const payment =
             await Payment.create({
                 user: user._id,
-                method: normalizedMethod,
-                amount: numericAmount,
+
+                method:
+                    normalizedMethod,
+
+                region:
+                    paymentMethod.region,
+
+                currency:
+                    paymentMethod.currency,
+
+                amount:
+                    numericAmount,
+
                 transactionId:
                     normalizedTransactionId,
+
                 status: "pending",
             });
 
@@ -163,7 +249,9 @@ export const createPayment = async (req, res) => {
                 user,
             });
 
-        if (!whatsappResult.success) {
+        if (
+            !whatsappResult.success
+        ) {
             console.warn(
                 "WhatsApp payment notification failed:",
                 whatsappResult.message
@@ -176,15 +264,31 @@ export const createPayment = async (req, res) => {
 
         return res.status(201).json({
             success: true,
+
             message:
                 "Payment request submitted successfully. It is pending review.",
+
             payment: {
                 id: payment._id,
-                method: payment.method,
-                amount: payment.amount,
+
+                method:
+                    payment.method,
+
+                region:
+                    payment.region,
+
+                currency:
+                    payment.currency,
+
+                amount:
+                    payment.amount,
+
                 transactionId:
                     payment.transactionId,
-                status: payment.status,
+
+                status:
+                    payment.status,
+
                 createdAt:
                     payment.createdAt,
             },
@@ -199,7 +303,9 @@ export const createPayment = async (req, res) => {
         // DUPLICATE KEY ERROR
         // ==========================================
 
-        if (error.code === 11000) {
+        if (
+            error.code === 11000
+        ) {
             return res.status(409).json({
                 success: false,
                 message:
@@ -233,7 +339,7 @@ export const getMyPayments = async (
                     createdAt: -1,
                 })
                 .select(
-                    "method amount transactionId status rejectionReason reviewedAt createdAt updatedAt"
+                    "method region currency amount exchangeRate creditedAmount creditedCurrency transactionId status rejectionReason reviewedAt createdAt updatedAt"
                 );
 
         return res.status(200).json({
@@ -269,7 +375,7 @@ export const getPaymentById = async (
                 _id: req.params.id,
                 user: req.user._id,
             }).select(
-                "method amount transactionId status rejectionReason reviewedAt createdAt updatedAt"
+                "method region currency amount exchangeRate creditedAmount creditedCurrency transactionId status rejectionReason reviewedAt createdAt updatedAt"
             );
 
         if (!payment) {
@@ -303,25 +409,43 @@ export const getPaymentById = async (
 // APPROVE PAYMENT
 // ==========================================
 
-export const approvePayment = async (req, res) => {
+export const approvePayment = async (
+    req,
+    res
+) => {
     try {
         const { id } = req.params;
 
-        const result = await approvePaymentById({
-            paymentId: id,
-            adminId: req.user._id,
-        });
+        const result =
+            await approvePaymentById({
+                paymentId: id,
+                adminId: req.user._id,
+            });
 
         return res.status(
             result.statusCode
         ).json({
-            success: result.success,
-            message: result.message,
+            success:
+                result.success,
+
+            message:
+                result.message,
+
             ...(result.payment && {
-                payment: result.payment,
+                payment:
+                    result.payment,
             }),
-            ...(result.balance !== undefined && {
-                balance: result.balance,
+
+            ...(result.balance !==
+                undefined && {
+                balance:
+                    result.balance,
+            }),
+
+            ...(result.creditedAmount !==
+                undefined && {
+                creditedAmount:
+                    result.creditedAmount,
             }),
         });
     } catch (error) {
@@ -343,7 +467,10 @@ export const approvePayment = async (req, res) => {
 // REJECT PAYMENT
 // ==========================================
 
-export const rejectPayment = async (req, res) => {
+export const rejectPayment = async (
+    req,
+    res
+) => {
     try {
         const { id } = req.params;
 
@@ -353,7 +480,9 @@ export const rejectPayment = async (req, res) => {
 
         if (
             !rejectionReason ||
-            !rejectionReason.trim()
+            !String(
+                rejectionReason
+            ).trim()
         ) {
             return res.status(400).json({
                 success: false,
@@ -372,10 +501,15 @@ export const rejectPayment = async (req, res) => {
         return res.status(
             result.statusCode
         ).json({
-            success: result.success,
-            message: result.message,
+            success:
+                result.success,
+
+            message:
+                result.message,
+
             ...(result.payment && {
-                payment: result.payment,
+                payment:
+                    result.payment,
             }),
         });
     } catch (error) {
@@ -397,7 +531,10 @@ export const rejectPayment = async (req, res) => {
 // GET ALL PAYMENTS - ADMIN
 // ==========================================
 
-export const getAdminPayments = async (req, res) => {
+export const getAdminPayments = async (
+    req,
+    res
+) => {
     try {
         const {
             status,
@@ -419,7 +556,9 @@ export const getAdminPayments = async (req, res) => {
 
         if (status) {
             if (
-                !allowedStatuses.includes(status)
+                !allowedStatuses.includes(
+                    status
+                )
             ) {
                 return res.status(400).json({
                     success: false,
@@ -436,16 +575,23 @@ export const getAdminPayments = async (req, res) => {
         // ==========================================
 
         const currentPage =
-            Math.max(Number(page), 1);
+            Math.max(
+                Number(page),
+                1
+            );
 
         const perPage =
             Math.min(
-                Math.max(Number(limit), 1),
+                Math.max(
+                    Number(limit),
+                    1
+                ),
                 100
             );
 
         const skip =
-            (currentPage - 1) * perPage;
+            (currentPage - 1) *
+            perPage;
 
         // ==========================================
         // FETCH PAYMENTS
@@ -470,10 +616,12 @@ export const getAdminPayments = async (req, res) => {
                 .skip(skip)
                 .limit(perPage)
                 .select(
-                    "user method amount transactionId status rejectionReason reviewedAt reviewedBy createdAt updatedAt"
+                    "user method region currency amount exchangeRate creditedAmount creditedCurrency transactionId status rejectionReason reviewedAt reviewedBy createdAt updatedAt"
                 ),
 
-            Payment.countDocuments(filter),
+            Payment.countDocuments(
+                filter
+            ),
         ]);
 
         // ==========================================
@@ -486,12 +634,20 @@ export const getAdminPayments = async (req, res) => {
             payments,
 
             pagination: {
-                page: currentPage,
-                limit: perPage,
-                total: totalPayments,
-                totalPages: Math.ceil(
-                    totalPayments / perPage
-                ),
+                page:
+                    currentPage,
+
+                limit:
+                    perPage,
+
+                total:
+                    totalPayments,
+
+                totalPages:
+                    Math.ceil(
+                        totalPayments /
+                        perPage
+                    ),
             },
         });
     } catch (error) {

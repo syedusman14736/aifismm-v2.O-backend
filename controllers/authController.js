@@ -5,7 +5,9 @@ import User from "../models/User.js";
 import generateToken from "../utils/generateToken.js";
 import generateOtp from "../utils/generateOtp.js";
 
-import sendWhatsappOtp from "../services/whatsappService.js";
+import sendWhatsappOtp, {
+    sendPasswordResetOtp,
+} from "../services/whatsappService.js";
 
 // ==========================================
 // SIGNUP
@@ -43,13 +45,55 @@ export const signup = async (req, res) => {
             name.trim();
 
         const normalizedUsername =
-            username.trim().toLowerCase();
+            username
+                .trim()
+                .toLowerCase();
 
         const normalizedEmail =
-            email.trim().toLowerCase();
+            email
+                .trim()
+                .toLowerCase();
 
         const normalizedWhatsapp =
             whatsapp.trim();
+
+        // ==========================================
+        // WHATSAPP NUMBER VALIDATION
+        // ==========================================
+        //
+        // International E.164 format:
+        //
+        // Pakistan:
+        // +923331080018
+        //
+        // USA:
+        // +14155552671
+        //
+        // UK:
+        // +447911123456
+        //
+        // UAE:
+        // +971501234567
+        //
+        // All countries are accepted.
+        //
+        // ==========================================
+
+        const whatsappRegex =
+            /^\+[1-9]\d{7,14}$/;
+
+        if (
+            !whatsappRegex.test(
+                normalizedWhatsapp
+            )
+        ) {
+            return res.status(400).json({
+                success: false,
+                field: "whatsapp",
+                message:
+                    "Please enter a valid WhatsApp number with country code.",
+            });
+        }
 
         // ==========================================
         // CHECK EXISTING USERNAME
@@ -122,39 +166,45 @@ export const signup = async (req, res) => {
         // GENERATE OTP
         // ==========================================
 
-        const otp = generateOtp();
+        const otp =
+            generateOtp();
 
-        const otpExpires = new Date(
-            Date.now() +
-            5 * 60 * 1000
-        );
+        const otpExpires =
+            new Date(
+                Date.now() +
+                5 * 60 * 1000
+            );
 
         // ==========================================
         // CREATE USER
         // ==========================================
 
-        const user = await User.create({
-            name: normalizedName,
+        const user =
+            await User.create({
+                name:
+                    normalizedName,
 
-            username:
-                normalizedUsername,
+                username:
+                    normalizedUsername,
 
-            email:
-                normalizedEmail,
+                email:
+                    normalizedEmail,
 
-            whatsapp:
-                normalizedWhatsapp,
+                whatsapp:
+                    normalizedWhatsapp,
 
-            password:
-                hashedPassword,
+                password:
+                    hashedPassword,
 
-            whatsappVerified: false,
+                whatsappVerified:
+                    false,
 
-            whatsappOtp: otp,
+                whatsappOtp:
+                    otp,
 
-            whatsappOtpExpires:
-                otpExpires,
-        });
+                whatsappOtpExpires:
+                    otpExpires,
+            });
 
         // ==========================================
         // SEND WHATSAPP OTP
@@ -163,17 +213,17 @@ export const signup = async (req, res) => {
         const whatsappResponse =
             await sendWhatsappOtp(
                 normalizedWhatsapp,
-                otp
+                otp,
+                normalizedName
             );
 
         // ==========================================
         // OTP SEND FAILED
         // ==========================================
 
-        if (!whatsappResponse.success) {
-            // Remove newly-created account
-            // because verification could not start.
-
+        if (
+            !whatsappResponse.success
+        ) {
             await User.findByIdAndDelete(
                 user._id
             );
@@ -201,6 +251,7 @@ export const signup = async (req, res) => {
             message:
                 "Account created successfully. A verification code has been sent to your WhatsApp.",
         });
+
     } catch (error) {
         console.error(
             "Signup Error:",
@@ -211,7 +262,9 @@ export const signup = async (req, res) => {
         // MONGOOSE DUPLICATE ERROR
         // ==========================================
 
-        if (error.code === 11000) {
+        if (
+            error.code === 11000
+        ) {
             const duplicateField =
                 Object.keys(
                     error.keyPattern || {}
@@ -219,9 +272,11 @@ export const signup = async (req, res) => {
 
             return res.status(409).json({
                 success: false,
+
                 field:
                     duplicateField ||
                     "general",
+
                 message:
                     `${duplicateField || "Value"} is already registered.`,
             });
@@ -239,7 +294,10 @@ export const signup = async (req, res) => {
 // LOGIN
 // ==========================================
 
-export const login = async (req, res) => {
+export const login = async (
+    req,
+    res
+) => {
     try {
         const {
             email,
@@ -250,7 +308,10 @@ export const login = async (req, res) => {
         // VALIDATION
         // ==========================================
 
-        if (!email || !password) {
+        if (
+            !email ||
+            !password
+        ) {
             return res.status(400).json({
                 success: false,
                 message:
@@ -259,7 +320,9 @@ export const login = async (req, res) => {
         }
 
         const identifier =
-            email.trim().toLowerCase();
+            email
+                .trim()
+                .toLowerCase();
 
         // ==========================================
         // FIND USER
@@ -269,7 +332,8 @@ export const login = async (req, res) => {
             await User.findOne({
                 $or: [
                     {
-                        email: identifier,
+                        email:
+                            identifier,
                     },
                     {
                         username:
@@ -317,9 +381,8 @@ export const login = async (req, res) => {
                 user.password
             );
 
-        // IMPORTANT:
-        // OTP is generated ONLY after
-        // the password is correct.
+        // OTP is generated only after
+        // password is correct.
 
         if (!passwordMatch) {
             return res.status(401).json({
@@ -336,8 +399,8 @@ export const login = async (req, res) => {
         if (
             !user.whatsappVerified
         ) {
-            // Always generate a NEW OTP.
-            // This invalidates the previous OTP.
+            // Generate a NEW OTP.
+            // Previous OTP becomes invalid.
 
             const otp =
                 generateOtp();
@@ -348,11 +411,15 @@ export const login = async (req, res) => {
                     5 * 60 * 1000
                 );
 
-            // Send first
+            // ==========================================
+            // SEND OTP
+            // ==========================================
+
             const whatsappResponse =
                 await sendWhatsappOtp(
                     user.whatsapp,
-                    otp
+                    otp,
+                    user.name
                 );
 
             if (
@@ -365,7 +432,10 @@ export const login = async (req, res) => {
                 });
             }
 
-            // Save only after successful send.
+            // ==========================================
+            // SAVE OTP
+            // ==========================================
+
             user.whatsappOtp =
                 otp;
 
@@ -398,7 +468,7 @@ export const login = async (req, res) => {
         await user.save();
 
         // ==========================================
-        // JWT
+        // GENERATE JWT
         // ==========================================
 
         const token =
@@ -406,30 +476,49 @@ export const login = async (req, res) => {
                 user._id
             );
 
+        // ==========================================
+        // RESPONSE
+        // ==========================================
+
         return res.status(200).json({
             success: true,
 
             token,
 
             user: {
-                id: user._id,
-                name: user.name,
+                id:
+                    user._id,
+
+                name:
+                    user.name,
+
                 username:
                     user.username,
-                email: user.email,
+
+                email:
+                    user.email,
+
                 whatsapp:
                     user.whatsapp,
+
                 balance:
                     user.balance,
+
                 currency:
                     user.currency,
-                role: user.role,
+
+                role:
+                    user.role,
+
                 status:
                     user.status,
+
                 emailVerified:
                     user.emailVerified,
+
                 whatsappVerified:
                     user.whatsappVerified,
+
                 lastLogin:
                     user.lastLogin,
             },
@@ -437,6 +526,7 @@ export const login = async (req, res) => {
             message:
                 "Login successful.",
         });
+
     } catch (error) {
         console.error(
             "Login Error:",
@@ -469,7 +559,10 @@ export const verifyWhatsapp = async (
         // VALIDATION
         // ==========================================
 
-        if (!whatsapp || !otp) {
+        if (
+            !whatsapp ||
+            !otp
+        ) {
             return res.status(400).json({
                 success: false,
                 message:
@@ -537,12 +630,9 @@ export const verifyWhatsapp = async (
         // ==========================================
 
         if (
-            user.whatsappOtpExpires
-                .getTime() <
+            user.whatsappOtpExpires.getTime() <
             Date.now()
         ) {
-            // Clear expired OTP
-
             user.whatsappOtp =
                 null;
 
@@ -580,10 +670,8 @@ export const verifyWhatsapp = async (
         user.whatsappVerified =
             true;
 
-        // Clear OTP immediately
-        // so it cannot be reused.
-
-        user.whatsappOtp = null;
+        user.whatsappOtp =
+            null;
 
         user.whatsappOtpExpires =
             null;
@@ -600,6 +688,7 @@ export const verifyWhatsapp = async (
             message:
                 "WhatsApp number verified successfully.",
         });
+
     } catch (error) {
         console.error(
             "Verify WhatsApp Error:",
@@ -623,8 +712,9 @@ export const resendWhatsappOtp = async (
     res
 ) => {
     try {
-        const { whatsapp } =
-            req.body;
+        const {
+            whatsapp,
+        } = req.body;
 
         // ==========================================
         // VALIDATION
@@ -693,7 +783,8 @@ export const resendWhatsappOtp = async (
         const whatsappResponse =
             await sendWhatsappOtp(
                 normalizedWhatsapp,
-                otp
+                otp,
+                user.name
             );
 
         if (
@@ -728,6 +819,7 @@ export const resendWhatsappOtp = async (
             message:
                 "A new verification code has been sent to your WhatsApp.",
         });
+
     } catch (error) {
         console.error(
             "Resend WhatsApp OTP Error:",
@@ -755,30 +847,47 @@ export const getMe = async (
             success: true,
 
             user: {
-                id: req.user._id,
-                name: req.user.name,
+                id:
+                    req.user._id,
+
+                name:
+                    req.user.name,
+
                 username:
                     req.user.username,
-                email: req.user.email,
+
+                email:
+                    req.user.email,
+
                 whatsapp:
                     req.user.whatsapp,
+
                 balance:
                     req.user.balance,
+
                 currency:
                     req.user.currency,
-                role: req.user.role,
+
+                role:
+                    req.user.role,
+
                 status:
                     req.user.status,
+
                 emailVerified:
                     req.user.emailVerified,
+
                 whatsappVerified:
                     req.user.whatsappVerified,
+
                 lastLogin:
                     req.user.lastLogin,
+
                 createdAt:
                     req.user.createdAt,
             },
         });
+
     } catch (error) {
         console.error(
             "Get Me Error:",
@@ -789,6 +898,525 @@ export const getMe = async (
             success: false,
             message:
                 "Unable to fetch user information.",
+        });
+    }
+};
+
+// ==========================================
+// FORGOT PASSWORD
+// ==========================================
+
+export const forgotPassword = async (req, res) => {
+    try {
+        // ==========================================
+        // GET WHATSAPP FROM REQUEST
+        // ==========================================
+
+        const { whatsapp } = req.body;
+
+        if (!whatsapp) {
+            return res.status(400).json({
+                success: false,
+                message:
+                    "WhatsApp number is required",
+            });
+        }
+
+        // ==========================================
+        // NORMALIZE WHATSAPP NUMBER
+        // DATABASE FORMAT:
+        // +923333108018
+        //
+        // Supported inputs:
+        // 03333108018
+        // 923333108018
+        // +923333108018
+        // ==========================================
+
+        let normalizedWhatsapp =
+            whatsapp
+                .trim()
+                .replace(/\s+/g, "");
+
+        if (
+            normalizedWhatsapp.startsWith("03")
+        ) {
+            normalizedWhatsapp =
+                "+92" +
+                normalizedWhatsapp.slice(1);
+        } else if (
+            normalizedWhatsapp.startsWith("92")
+        ) {
+            normalizedWhatsapp =
+                "+" +
+                normalizedWhatsapp;
+        }
+
+        // ==========================================
+        // FIND USER
+        // ==========================================
+
+        const user =
+            await User.findOne({
+                whatsapp:
+                    normalizedWhatsapp,
+            }).select(
+                "+passwordResetOtp +passwordResetOtpExpires"
+            );
+
+        // ==========================================
+        // USER NOT FOUND
+        // ==========================================
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message:
+                    "No account found with this WhatsApp number",
+            });
+        }
+
+        // ==========================================
+        // CHECK ACCOUNT STATUS
+        // ==========================================
+
+        if (
+            user.status !== "active"
+        ) {
+            return res.status(403).json({
+                success: false,
+                message:
+                    `Your account is ${user.status}`,
+            });
+        }
+
+        // ==========================================
+        // GENERATE OTP
+        // ==========================================
+
+        const otp = generateOtp();
+
+        // ==========================================
+        // SAVE OTP
+        // ==========================================
+
+        user.passwordResetOtp = otp;
+
+        user.passwordResetOtpExpires =
+            new Date(
+                Date.now() +
+                5 * 60 * 1000
+            );
+
+        await user.save();
+
+        // ==========================================
+        // SEND PASSWORD RESET OTP
+        // ==========================================
+
+        const whatsappResult =
+            await sendPasswordResetOtp(
+                user.whatsapp,
+                otp,
+                user.name
+            );
+
+        // ==========================================
+        // WHATSAPP SEND FAILED
+        // ==========================================
+
+        if (
+            !whatsappResult.success
+        ) {
+            // Clear OTP if WhatsApp failed
+            user.passwordResetOtp = null;
+
+            user.passwordResetOtpExpires =
+                null;
+
+            await user.save();
+
+            return res.status(500).json({
+                success: false,
+                message:
+                    "Failed to send password reset OTP",
+            });
+        }
+
+        // ==========================================
+        // SUCCESS
+        // ==========================================
+
+        return res.status(200).json({
+            success: true,
+            message:
+                "Password reset OTP sent successfully",
+        });
+
+    } catch (error) {
+        // ==========================================
+        // SERVER ERROR
+        // ==========================================
+
+        console.error(
+            "Forgot Password Error:",
+            error
+        );
+
+        return res.status(500).json({
+            success: false,
+            message:
+                "Server error",
+        });
+    }
+};
+
+// ==========================================
+// VERIFY PASSWORD RESET OTP
+// ==========================================
+
+export const verifyResetOtp = async (req, res) => {
+    try {
+        const { whatsapp, otp } = req.body;
+
+        // ==========================================
+        // VALIDATION
+        // ==========================================
+
+        if (!whatsapp || !otp) {
+            return res.status(400).json({
+                success: false,
+                message:
+                    "WhatsApp number and OTP are required",
+            });
+        }
+
+        // ==========================================
+        // NORMALIZE WHATSAPP
+        // DATABASE FORMAT:
+        // +923333108018
+        // ==========================================
+
+        let normalizedWhatsapp =
+            whatsapp
+                .trim()
+                .replace(/\s+/g, "");
+
+        if (
+            normalizedWhatsapp.startsWith("03")
+        ) {
+            normalizedWhatsapp =
+                "+92" +
+                normalizedWhatsapp.slice(1);
+        } else if (
+            normalizedWhatsapp.startsWith("92")
+        ) {
+            normalizedWhatsapp =
+                "+" +
+                normalizedWhatsapp;
+        }
+
+        // ==========================================
+        // FIND USER
+        // ==========================================
+
+        const user =
+            await User.findOne({
+                whatsapp:
+                    normalizedWhatsapp,
+            }).select(
+                "+passwordResetOtp +passwordResetOtpExpires"
+            );
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message:
+                    "No account found with this WhatsApp number",
+            });
+        }
+
+        // ==========================================
+        // CHECK RESET REQUEST
+        // ==========================================
+
+        if (
+            !user.passwordResetOtp
+        ) {
+            return res.status(400).json({
+                success: false,
+                message:
+                    "No password reset request found. Please request a new OTP.",
+            });
+        }
+
+        // ==========================================
+        // CHECK OTP EXPIRY
+        // ==========================================
+
+        if (
+            !user.passwordResetOtpExpires ||
+            user.passwordResetOtpExpires <
+            new Date()
+        ) {
+            user.passwordResetOtp = null;
+
+            user.passwordResetOtpExpires =
+                null;
+
+            await user.save();
+
+            return res.status(400).json({
+                success: false,
+                message:
+                    "OTP has expired. Please request a new OTP.",
+            });
+        }
+
+        // ==========================================
+        // CHECK OTP
+        // ==========================================
+
+        if (
+            String(user.passwordResetOtp) !==
+            String(otp).trim()
+        ) {
+            return res.status(400).json({
+                success: false,
+                message:
+                    "Invalid OTP",
+            });
+        }
+
+        // ==========================================
+        // OTP VERIFIED
+        // ==========================================
+
+        return res.status(200).json({
+            success: true,
+            message:
+                "OTP verified successfully",
+        });
+
+    } catch (error) {
+        console.error(
+            "Verify Reset OTP Error:",
+            error
+        );
+
+        return res.status(500).json({
+            success: false,
+            message:
+                "Server error",
+        });
+    }
+};
+
+// ==========================================
+// RESET PASSWORD
+// ==========================================
+
+export const resetPassword = async (
+    req,
+    res
+) => {
+    try {
+        const {
+            whatsapp,
+            otp,
+            newPassword,
+        } = req.body;
+
+        // ==========================================
+        // VALIDATION
+        // ==========================================
+
+        if (
+            !whatsapp ||
+            !otp ||
+            !newPassword
+        ) {
+            return res.status(400).json({
+                success: false,
+                message:
+                    "WhatsApp, OTP and new password are required",
+            });
+        }
+
+        // ==========================================
+        // PASSWORD VALIDATION
+        // ==========================================
+
+        if (
+            newPassword.length < 6
+        ) {
+            return res.status(400).json({
+                success: false,
+                message:
+                    "Password must be at least 6 characters",
+            });
+        }
+
+        // ==========================================
+        // NORMALIZE WHATSAPP
+        // ==========================================
+        //
+        // Database format:
+        // +923333108018
+        //
+        // Supported inputs:
+        // 03333108018
+        // 923333108018
+        // +923333108018
+        //
+        // ==========================================
+
+        let normalizedWhatsapp =
+            whatsapp
+                .trim()
+                .replace(/\s+/g, "");
+
+        if (
+            normalizedWhatsapp.startsWith("03")
+        ) {
+            normalizedWhatsapp =
+                "+92" +
+                normalizedWhatsapp.slice(1);
+        } else if (
+            normalizedWhatsapp.startsWith("92")
+        ) {
+            normalizedWhatsapp =
+                "+" +
+                normalizedWhatsapp;
+        }
+
+        // ==========================================
+        // FIND USER
+        // ==========================================
+
+        const user =
+            await User.findOne({
+                whatsapp:
+                    normalizedWhatsapp,
+            }).select(
+                "+password +passwordResetOtp +passwordResetOtpExpires"
+            );
+
+        // ==========================================
+        // USER NOT FOUND
+        // ==========================================
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message:
+                    "No account found with this WhatsApp number",
+            });
+        }
+
+        // ==========================================
+        // CHECK RESET REQUEST
+        // ==========================================
+
+        if (
+            !user.passwordResetOtp
+        ) {
+            return res.status(400).json({
+                success: false,
+                message:
+                    "No password reset request found. Please request a new OTP.",
+            });
+        }
+
+        // ==========================================
+        // CHECK OTP EXPIRY
+        // ==========================================
+
+        if (
+            !user.passwordResetOtpExpires ||
+            user.passwordResetOtpExpires <
+            new Date()
+        ) {
+            user.passwordResetOtp = null;
+
+            user.passwordResetOtpExpires =
+                null;
+
+            await user.save();
+
+            return res.status(400).json({
+                success: false,
+                message:
+                    "OTP has expired. Please request a new OTP.",
+            });
+        }
+
+        // ==========================================
+        // CHECK OTP
+        // ==========================================
+
+        if (
+            String(
+                user.passwordResetOtp
+            ) !==
+            String(otp).trim()
+        ) {
+            return res.status(400).json({
+                success: false,
+                message:
+                    "Invalid OTP",
+            });
+        }
+
+        // ==========================================
+        // HASH NEW PASSWORD
+        // ==========================================
+
+        const hashedPassword =
+            await bcrypt.hash(
+                newPassword,
+                12
+            );
+
+        // ==========================================
+        // UPDATE PASSWORD
+        // ==========================================
+
+        user.password =
+            hashedPassword;
+
+        // ==========================================
+        // CLEAR RESET OTP
+        // ==========================================
+
+        user.passwordResetOtp =
+            null;
+
+        user.passwordResetOtpExpires =
+            null;
+
+        await user.save();
+
+        // ==========================================
+        // SUCCESS
+        // ==========================================
+
+        return res.status(200).json({
+            success: true,
+            message:
+                "Password reset successfully",
+        });
+
+    } catch (error) {
+        console.error(
+            "Reset Password Error:",
+            error
+        );
+
+        return res.status(500).json({
+            success: false,
+            message:
+                "Server error",
         });
     }
 };

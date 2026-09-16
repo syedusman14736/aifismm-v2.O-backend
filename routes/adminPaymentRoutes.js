@@ -1,15 +1,16 @@
 import express from "express";
 
 import {
-    getAdminPayments,
+    getAllPayments,
     approvePayment,
     rejectPayment,
-} from "../controllers/paymentController.js";
+} from "../controllers/adminPaymentController.js";
 
 import authMiddleware from "../middleware/authMiddleware.js";
 import adminMiddleware from "../middleware/adminMiddleware.js";
 
 const router = express.Router();
+
 
 // ==========================================
 // GET ALL PAYMENTS
@@ -19,8 +20,9 @@ router.get(
     "/",
     authMiddleware,
     adminMiddleware,
-    getAdminPayments
+    getAllPayments
 );
+
 
 // ==========================================
 // APPROVE PAYMENT
@@ -32,6 +34,7 @@ router.patch(
     adminMiddleware,
     approvePayment
 );
+
 
 // ==========================================
 // REJECT PAYMENT

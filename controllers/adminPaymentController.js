@@ -1,7 +1,9 @@
-import mongoose from "mongoose";
-
 import Payment from "../models/Payment.js";
-import User from "../models/User.js";
+
+import {
+    approvePaymentById,
+    rejectPaymentById,
+} from "../services/paymentApprovalService.js";
 
 // ==========================================
 // GET ALL PAYMENTS - ADMIN
@@ -48,131 +50,19 @@ export const approvePayment = async (
     req,
     res
 ) => {
-    const session =
-        await mongoose.startSession();
-
     try {
-        session.startTransaction();
-
-        // ==========================================
-        // FIND PENDING PAYMENT
-        // ==========================================
-
-        const payment =
-            await Payment.findOne({
-                _id: req.params.id,
-                status: "pending",
-            }).session(session);
-
-        if (!payment) {
-            await session.abortTransaction();
-
-            return res.status(404).json({
-                success: false,
-                message:
-                    "Pending payment request not found.",
+        const result =
+            await approvePaymentById({
+                paymentId: req.params.id,
+                adminId: req.user._id,
             });
-        }
 
-        // ==========================================
-        // FIND USER
-        // ==========================================
-
-        const user =
-            await User.findById(
-                payment.user
-            ).session(session);
-
-        if (!user) {
-            await session.abortTransaction();
-
-            return res.status(404).json({
-                success: false,
-                message:
-                    "User associated with this payment was not found.",
-            });
-        }
-
-        // ==========================================
-        // CHECK USER STATUS
-        // ==========================================
-
-        if (user.status !== "active") {
-            await session.abortTransaction();
-
-            return res.status(403).json({
-                success: false,
-                message:
-                    `Cannot approve payment because user account is ${user.status}.`,
-            });
-        }
-
-        // ==========================================
-        // UPDATE PAYMENT
-        // ==========================================
-
-        payment.status = "completed";
-
-        payment.reviewedAt =
-            new Date();
-
-        payment.reviewedBy =
-            req.user._id;
-
-        payment.rejectionReason = "";
-
-        await payment.save({
-            session,
-        });
-
-        // ==========================================
-        // ADD BALANCE
-        // ==========================================
-
-        user.balance =
-            Number(user.balance || 0) +
-            Number(payment.amount);
-
-        await user.save({
-            session,
-        });
-
-        // ==========================================
-        // COMMIT TRANSACTION
-        // ==========================================
-
-        await session.commitTransaction();
-
-        return res.status(200).json({
-            success: true,
-
-            message:
-                "Payment approved and user balance updated successfully.",
-
-            payment: {
-                id: payment._id,
-
-                amount: payment.amount,
-
-                status: payment.status,
-
-                reviewedAt:
-                    payment.reviewedAt,
-            },
-
-            user: {
-                id: user._id,
-
-                balance: user.balance,
-
-                currency: user.currency,
-            },
-        });
+        return res
+            .status(result.statusCode)
+            .json(result);
     } catch (error) {
-        await session.abortTransaction();
-
         console.error(
-            "Approve Payment Error:",
+            "Approve Payment Controller Error:",
             error
         );
 
@@ -181,8 +71,6 @@ export const approvePayment = async (
             message:
                 "Unable to approve payment.",
         });
-    } finally {
-        session.endSession();
     }
 };
 
@@ -199,66 +87,19 @@ export const rejectPayment = async (
             rejectionReason = "",
         } = req.body;
 
-        // ==========================================
-        // FIND PENDING PAYMENT
-        // ==========================================
-
-        const payment =
-            await Payment.findOne({
-                _id: req.params.id,
-                status: "pending",
+        const result =
+            await rejectPaymentById({
+                paymentId: req.params.id,
+                adminId: req.user._id,
+                rejectionReason,
             });
 
-        if (!payment) {
-            return res.status(404).json({
-                success: false,
-                message:
-                    "Pending payment request not found.",
-            });
-        }
-
-        // ==========================================
-        // UPDATE PAYMENT
-        // ==========================================
-
-        payment.status = "rejected";
-
-        payment.reviewedAt =
-            new Date();
-
-        payment.reviewedBy =
-            req.user._id;
-
-        payment.rejectionReason =
-            String(
-                rejectionReason
-            ).trim();
-
-        await payment.save();
-
-        return res.status(200).json({
-            success: true,
-
-            message:
-                "Payment request rejected successfully.",
-
-            payment: {
-                id: payment._id,
-
-                amount: payment.amount,
-
-                status: payment.status,
-
-                rejectionReason:
-                    payment.rejectionReason,
-
-                reviewedAt:
-                    payment.reviewedAt,
-            },
-        });
+        return res
+            .status(result.statusCode)
+            .json(result);
     } catch (error) {
         console.error(
-            "Reject Payment Error:",
+            "Reject Payment Controller Error:",
             error
         );
 

@@ -6,6 +6,9 @@ import {
     getMe,
     verifyWhatsapp,
     resendWhatsappOtp,
+    forgotPassword,
+    verifyResetOtp,
+    resetPassword,
 } from "../controllers/authController.js";
 
 import authMiddleware from "../middleware/authMiddleware.js";
@@ -42,6 +45,21 @@ router.get(
     "/me",
     authMiddleware,
     getMe
+);
+
+router.post(
+    "/forgot-password",
+    forgotPassword
+);
+
+router.post(
+    "/verify-reset-otp",
+    verifyResetOtp
+);
+
+router.post(
+    "/reset-password",
+    resetPassword
 );
 
 export default router;

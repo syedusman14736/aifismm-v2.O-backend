@@ -1,8 +1,98 @@
 import axios from "axios";
 
-const sendWhatsappOtp = async (phoneNumber, otp) => {
+// ==========================================
+// SEND WHATSAPP OTP
+// Used for signup / login verification
+// ==========================================
+
+const sendWhatsappOtp = async (
+    phoneNumber,
+    otp,
+    userName
+) => {
     try {
-        const url = `https://graph.facebook.com/${process.env.WHATSAPP_API_VERSION}/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`;
+        const url =
+            `https://graph.facebook.com/${process.env.WHATSAPP_API_VERSION}` +
+            `/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`;
+
+        const response = await axios.post(
+            url,
+            {
+                messaging_product: "whatsapp",
+                to: phoneNumber,
+                type: "template",
+                template: {
+                    name:
+                        process.env.WHATSAPP_OTP_TEMPLATE,
+                    language: {
+                        code: "en_US",
+                    },
+                    components: [
+                        {
+                            type: "body",
+                            parameters: [
+                                {
+                                    type: "text",
+                                    text: userName,
+                                },
+                                {
+                                    type: "text",
+                                    text: otp,
+                                },
+                            ],
+                        },
+                    ],
+                },
+            },
+            {
+                headers: {
+                    Authorization:
+                        `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
+                    "Content-Type":
+                        "application/json",
+                },
+            }
+        );
+
+        console.log(
+            "WhatsApp OTP sent:",
+            response.data.messages?.[0]?.id
+        );
+
+        return {
+            success: true,
+            data: response.data,
+        };
+    } catch (error) {
+        console.error(
+            "WhatsApp OTP Error:",
+            error.response?.data ||
+            error.message
+        );
+
+        return {
+            success: false,
+            error:
+                error.response?.data ||
+                error.message,
+        };
+    }
+};
+
+
+// ==========================================
+// SEND PASSWORD RESET OTP
+// ==========================================
+
+const sendPasswordResetOtp = async (
+    phoneNumber,
+    otp,
+    userName
+) => {
+    try {
+        const url =
+            `https://graph.facebook.com/${process.env.WHATSAPP_API_VERSION}` +
+            `/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`;
 
         const response = await axios.post(
             url,
@@ -21,6 +111,10 @@ const sendWhatsappOtp = async (phoneNumber, otp) => {
                             parameters: [
                                 {
                                     type: "text",
+                                    text: userName,
+                                },
+                                {
+                                    type: "text",
                                     text: otp,
                                 },
                             ],
@@ -30,14 +124,16 @@ const sendWhatsappOtp = async (phoneNumber, otp) => {
             },
             {
                 headers: {
-                    Authorization: `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
-                    "Content-Type": "application/json",
+                    Authorization:
+                        `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
+                    "Content-Type":
+                        "application/json",
                 },
             }
         );
 
         console.log(
-            "✅ WhatsApp OTP sent:",
+            "Password reset OTP sent:",
             response.data.messages?.[0]?.id
         );
 
@@ -47,8 +143,9 @@ const sendWhatsappOtp = async (phoneNumber, otp) => {
         };
     } catch (error) {
         console.error(
-            "❌ WhatsApp OTP Error:",
-            error.response?.data || error.message
+            "Password reset OTP Error:",
+            error.response?.data ||
+            error.message
         );
 
         return {
@@ -58,6 +155,11 @@ const sendWhatsappOtp = async (phoneNumber, otp) => {
                 error.message,
         };
     }
+};
+
+
+export {
+    sendPasswordResetOtp,
 };
 
 export default sendWhatsappOtp;

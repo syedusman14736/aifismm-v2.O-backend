@@ -42,45 +42,67 @@ const userSchema = new mongoose.Schema(
             select: false,
         },
 
+        // ==========================================
         // ACCOUNT BALANCE
+        // ==========================================
+
         balance: {
             type: Number,
             default: 0,
             min: 0,
         },
 
+
         currency: {
             type: String,
-            default: "PKR",
+            default: "USD",
+            uppercase: true,
+            trim: true,
         },
 
+
+        // ==========================================
         // ACCOUNT ROLE
+        // ==========================================
+
         role: {
             type: String,
             enum: ["user", "admin"],
             default: "user",
         },
 
+        // ==========================================
         // ACCOUNT STATUS
+        // ==========================================
+
         status: {
             type: String,
             enum: ["active", "suspended", "blocked"],
             default: "active",
         },
 
+        // ==========================================
         // EMAIL VERIFICATION
+        // ==========================================
+
         emailVerified: {
             type: Boolean,
             default: false,
         },
 
+        // ==========================================
         // WHATSAPP VERIFICATION
+        // ==========================================
+
         whatsappVerified: {
             type: Boolean,
             default: false,
         },
 
+        // ==========================================
         // WHATSAPP OTP
+        // ==========================================
+
         whatsappOtp: {
             type: String,
             default: null,
@@ -93,7 +115,26 @@ const userSchema = new mongoose.Schema(
             select: false,
         },
 
+        // ==========================================
+        // PASSWORD RESET OTP
+        // ==========================================
+
+        passwordResetOtp: {
+            type: String,
+            default: null,
+            select: false,
+        },
+
+        passwordResetOtpExpires: {
+            type: Date,
+            default: null,
+            select: false,
+        },
+
+        // ==========================================
         // LAST LOGIN
+        // ==========================================
+
         lastLogin: {
             type: Date,
             default: null,
@@ -104,6 +145,10 @@ const userSchema = new mongoose.Schema(
     }
 );
 
-const User = mongoose.model("User", userSchema);
+const User =
+    mongoose.model(
+        "User",
+        userSchema
+    );
 
 export default User;

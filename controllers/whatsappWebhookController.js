@@ -6,173 +6,193 @@ import {
 } from "../services/paymentApprovalService.js";
 
 
-// ======================================================
-// HELPERS
-// ======================================================
+// ==========================================
+// ENVIRONMENT
+// ==========================================
 
-const normalizePhoneNumber = (number = "") => {
-    return String(number)
-        .replace(/\D/g, "")
-        .replace(/^00/, "");
-};
+const WHATSAPP_VERIFY_TOKEN =
+    process.env.WHATSAPP_VERIFY_TOKEN;
+
+const WHATSAPP_APP_SECRET =
+    process.env.WHATSAPP_APP_SECRET;
+
+const ADMIN_WHATSAPP_NUMBER =
+    String(
+        process.env.ADMIN_WHATSAPP_NUMBER || ""
+    )
+        .replace(/\D/g, "");
+
+const WHATSAPP_PHONE_NUMBER_ID =
+    String(
+        process.env.WHATSAPP_PHONE_NUMBER_ID || ""
+    );
 
 
-// ======================================================
-// VERIFY WHATSAPP WEBHOOK
-// ======================================================
+// ==========================================
+// VERIFY META WEBHOOK
+// ==========================================
 
-export const verifyWhatsAppWebhook = (req, res) => {
-    try {
-        const mode = req.query["hub.mode"];
-        const token = req.query["hub.verify_token"];
-        const challenge = req.query["hub.challenge"];
+export const verifyWhatsAppWebhook = (
+    req,
+    res
+) => {
+    console.log(
+        "\n=========================================="
+    );
 
-        const verifyToken =
-            process.env.WHATSAPP_VERIFY_TOKEN;
+    console.log(
+        "📱 WHATSAPP WEBHOOK VERIFICATION"
+    );
 
-        if (!verifyToken) {
-            console.error(
-                "❌ WHATSAPP_VERIFY_TOKEN is missing."
-            );
+    console.log(
+        "=========================================="
+    );
 
-            return res.sendStatus(500);
-        }
 
-        if (
-            mode === "subscribe" &&
-            token === verifyToken
-        ) {
-            console.log(
-                "✅ WhatsApp Webhook Verified."
-            );
+    const mode =
+        req.query["hub.mode"];
 
-            return res
-                .status(200)
-                .send(challenge);
-        }
+    const token =
+        req.query["hub.verify_token"];
 
-        console.error(
-            "❌ WhatsApp Webhook Verification Failed."
+    const challenge =
+        req.query["hub.challenge"];
+
+
+    console.log(
+        "📱 Mode:",
+        mode
+    );
+
+    console.log(
+        "📱 Verify token received:",
+        token
+            ? "YES"
+            : "NO"
+    );
+
+
+    if (
+        mode === "subscribe" &&
+        token === WHATSAPP_VERIFY_TOKEN
+    ) {
+        console.log(
+            "✅ WhatsApp webhook verified."
         );
 
-        return res.sendStatus(403);
-
-    } catch (error) {
-        console.error(
-            "❌ WhatsApp Webhook Verification Error:",
-            error
-        );
-
-        return res.sendStatus(500);
+        return res
+            .status(200)
+            .send(challenge);
     }
+
+
+    console.error(
+        "❌ WhatsApp webhook verification failed."
+    );
+
+
+    return res
+        .sendStatus(403);
 };
 
 
-// ======================================================
-// VERIFY META WEBHOOK SIGNATURE
-// ======================================================
+// ==========================================
+// VERIFY WEBHOOK SIGNATURE
+// ==========================================
 
-const verifyWhatsAppSignature = (req) => {
+const verifySignature = (
+    req
+) => {
     try {
-        const signature =
-            req.headers["x-hub-signature-256"];
-
-        const appSecret =
-            process.env.WHATSAPP_APP_SECRET;
-
-        if (
-            !signature ||
-            !appSecret ||
-            !req.rawBody
-        ) {
+        if (!WHATSAPP_APP_SECRET) {
             console.error(
-                "❌ WhatsApp signature data missing."
+                "❌ WHATSAPP_APP_SECRET is missing."
             );
 
             return false;
         }
+
+
+        if (!req.rawBody) {
+            console.error(
+                "❌ rawBody is missing."
+            );
+
+            return false;
+        }
+
+
+        const signature =
+            req.headers[
+            "x-hub-signature-256"
+            ];
+
+
+        if (!signature) {
+            console.error(
+                "❌ x-hub-signature-256 header missing."
+            );
+
+            return false;
+        }
+
 
         const expectedSignature =
             "sha256=" +
             crypto
                 .createHmac(
                     "sha256",
-                    appSecret
+                    WHATSAPP_APP_SECRET
                 )
                 .update(req.rawBody)
                 .digest("hex");
 
-        const receivedBuffer =
+
+        const signatureBuffer =
             Buffer.from(signature);
 
         const expectedBuffer =
-            Buffer.from(expectedSignature);
+            Buffer.from(
+                expectedSignature
+            );
+
 
         if (
-            receivedBuffer.length !==
+            signatureBuffer.length !==
             expectedBuffer.length
         ) {
-            return false;
-        }
-
-        return crypto.timingSafeEqual(
-            receivedBuffer,
-            expectedBuffer
-        );
-
-    } catch (error) {
-        console.error(
-            "❌ WhatsApp Signature Error:",
-            error
-        );
-
-        return false;
-    }
-};
-
-
-// ======================================================
-// VERIFY ADMIN WHATSAPP NUMBER
-// ======================================================
-
-const isAdminWhatsAppNumber = (message) => {
-    try {
-        const configuredAdmin =
-            process.env.ADMIN_WHATSAPP_NUMBER;
-
-        if (!configuredAdmin) {
             console.error(
-                "❌ ADMIN_WHATSAPP_NUMBER is missing."
+                "❌ Invalid signature length."
             );
 
             return false;
         }
 
-        const sender =
-            normalizePhoneNumber(
-                message?.from
+
+        const isValid =
+            crypto.timingSafeEqual(
+                signatureBuffer,
+                expectedBuffer
             );
 
-        const admin =
-            normalizePhoneNumber(
-                configuredAdmin
+
+        if (!isValid) {
+            console.error(
+                "❌ Invalid WhatsApp webhook signature."
             );
+        }
+        else {
+            console.log(
+                "✅ WhatsApp webhook signature verified."
+            );
+        }
 
-        console.log(
-            "WhatsApp Sender:",
-            sender
-        );
 
-        console.log(
-            "Configured Admin:",
-            admin
-        );
-
-        return sender === admin;
-
-    } catch (error) {
+        return isValid;
+    }
+    catch (error) {
         console.error(
-            "❌ Admin WhatsApp Verification Error:",
+            "❌ Signature verification error:",
             error
         );
 
@@ -181,122 +201,148 @@ const isAdminWhatsAppNumber = (message) => {
 };
 
 
-// ======================================================
-// VERIFY WHATSAPP PHONE NUMBER ID
-// ======================================================
+// ==========================================
+// NORMALIZE PHONE NUMBER
+// ==========================================
 
-const isCorrectPhoneNumber = (value) => {
-    const configuredId =
-        process.env.WHATSAPP_PHONE_NUMBER_ID;
-
-    const incomingId =
-        value?.metadata?.phone_number_id;
-
-    if (
-        !configuredId ||
-        !incomingId
-    ) {
-        console.error(
-            "❌ WhatsApp Phone Number ID missing."
-        );
-
-        return false;
-    }
-
-    if (
-        configuredId !==
-        incomingId
-    ) {
-        console.error(
-            "❌ WhatsApp Phone Number ID mismatch."
-        );
-
-        console.error(
-            "Incoming:",
-            incomingId
-        );
-
-        console.error(
-            "Configured:",
-            configuredId
-        );
-
-        return false;
-    }
-
-    return true;
+const normalizePhoneNumber = (
+    value
+) => {
+    return String(
+        value || ""
+    )
+        .replace(/\D/g, "");
 };
 
 
-// ======================================================
-// MAIN WHATSAPP WEBHOOK
-// ======================================================
+// ==========================================
+// GET MESSAGE SENDER
+// ==========================================
+
+const getSenderNumber = (
+    message
+) => {
+    return normalizePhoneNumber(
+        message?.from
+    );
+};
+
+
+// ==========================================
+// GET PHONE NUMBER ID
+// ==========================================
+
+const getPhoneNumberId = (
+    value
+) => {
+    return String(
+        value || ""
+    );
+};
+
+
+// ==========================================
+// HANDLE WHATSAPP WEBHOOK
+// ==========================================
 
 export const handleWhatsAppWebhook = async (
     req,
     res
 ) => {
+    console.log(
+        "\n\n=========================================="
+    );
+
+    console.log(
+        "📱📱📱 WHATSAPP WEBHOOK RECEIVED 📱📱📱"
+    );
+
+    console.log(
+        "=========================================="
+    );
+
+
     try {
+        // ==========================================
+        // LOG REQUEST
+        // ==========================================
 
-        // ------------------------------------------------
-        // 1. VERIFY META SIGNATURE
-        // ------------------------------------------------
+        console.log(
+            "📱 HTTP METHOD:",
+            req.method
+        );
 
-        if (!verifyWhatsAppSignature(req)) {
+        console.log(
+            "📱 REQUEST URL:",
+            req.originalUrl
+        );
+
+        console.log(
+            "📱 HAS RAW BODY:",
+            Boolean(req.rawBody)
+        );
+
+        console.log(
+            "📱 HAS BODY:",
+            Boolean(req.body)
+        );
+
+
+        // ==========================================
+        // VERIFY SIGNATURE
+        // ==========================================
+
+        const signatureValid =
+            verifySignature(req);
+
+
+        if (!signatureValid) {
             console.error(
-                "❌ Invalid WhatsApp webhook signature."
+                "❌ Rejecting webhook because signature is invalid."
             );
 
-            return res.sendStatus(401);
+            return res
+                .sendStatus(403);
         }
 
 
-        // ------------------------------------------------
-        // 2. GET BODY
-        // ------------------------------------------------
+        // ==========================================
+        // LOG BODY
+        // ==========================================
 
-        const body = req.body;
-
-
-        console.log("");
         console.log(
-            "=========================================="
-        );
-        console.log(
-            "📩 WHATSAPP WEBHOOK RECEIVED"
-        );
-        console.log(
-            "=========================================="
+            "\n📱 WEBHOOK BODY:"
         );
 
         console.log(
             JSON.stringify(
-                body,
+                req.body,
                 null,
                 2
             )
         );
 
 
-        // ------------------------------------------------
-        // 3. VERIFY OBJECT
-        // ------------------------------------------------
+        // ==========================================
+        // BASIC META STRUCTURE CHECK
+        // ==========================================
+
+        const body =
+            req.body;
+
 
         if (
-            body?.object !==
-            "whatsapp_business_account"
+            !body ||
+            body.object !== "whatsapp_business_account"
         ) {
-            console.warn(
-                "⚠️ Unknown webhook object."
+            console.log(
+                "ℹ️ Ignoring non-WhatsApp webhook."
             );
 
-            return res.sendStatus(200);
+            return res
+                .sendStatus(200);
         }
 
-
-        // ------------------------------------------------
-        // 4. ENTRIES
-        // ------------------------------------------------
 
         const entries =
             Array.isArray(body.entry)
@@ -304,483 +350,532 @@ export const handleWhatsAppWebhook = async (
                 : [];
 
 
-        // ------------------------------------------------
-        // 5. PROCESS ENTRIES
-        // ------------------------------------------------
+        console.log(
+            "📱 Entries:",
+            entries.length
+        );
 
-        for (const entry of entries) {
 
+        // ==========================================
+        // PROCESS ENTRIES
+        // ==========================================
+
+        for (
+            const entry of entries
+        ) {
             const changes =
-                Array.isArray(entry?.changes)
+                Array.isArray(
+                    entry.changes
+                )
                     ? entry.changes
                     : [];
 
 
-            // --------------------------------------------
-            // PROCESS CHANGES
-            // --------------------------------------------
-
-            for (const change of changes) {
-
+            for (
+                const change of changes
+            ) {
                 const value =
-                    change?.value;
+                    change.value;
+
 
                 if (!value) {
                     continue;
                 }
 
 
-                // ----------------------------------------
+                // ==========================================
                 // VERIFY PHONE NUMBER ID
-                // ----------------------------------------
+                // ==========================================
+
+                const metadataPhoneId =
+                    getPhoneNumberId(
+                        value?.metadata
+                            ?.phone_number_id
+                    );
+
+
+                console.log(
+                    "\n📱 META PHONE NUMBER ID:",
+                    metadataPhoneId
+                );
+
+                console.log(
+                    "📱 CONFIGURED PHONE NUMBER ID:",
+                    WHATSAPP_PHONE_NUMBER_ID
+                );
+
 
                 if (
-                    !isCorrectPhoneNumber(
-                        value
-                    )
+                    WHATSAPP_PHONE_NUMBER_ID &&
+                    metadataPhoneId !==
+                    WHATSAPP_PHONE_NUMBER_ID
                 ) {
-                    console.warn(
-                        "⚠️ Ignoring webhook: wrong Phone Number ID."
+                    console.error(
+                        "❌ Phone number ID mismatch."
                     );
 
                     continue;
                 }
 
 
-                // ----------------------------------------
-                // ONLY MESSAGES
-                // ----------------------------------------
+                // ==========================================
+                // GET MESSAGES
+                // ==========================================
 
-                if (
-                    change?.field !==
-                    "messages"
-                ) {
-                    console.log(
-                        "ℹ️ Webhook field:",
-                        change?.field
-                    );
-
-                    continue;
-                }
-
-
-                // ----------------------------------------
-                // NO MESSAGES
-                // ----------------------------------------
-
-                if (
-                    !Array.isArray(
+                const messages =
+                    Array.isArray(
                         value.messages
                     )
-                ) {
-                    console.log(
-                        "ℹ️ No messages array. Event ignored."
-                    );
-
-                    continue;
-                }
+                        ? value.messages
+                        : [];
 
 
-                // ----------------------------------------
-                // PROCESS MESSAGES
-                // ----------------------------------------
+                console.log(
+                    "📱 MESSAGES RECEIVED:",
+                    messages.length
+                );
+
 
                 for (
-                    const message of value.messages
+                    const message of messages
                 ) {
-                    await processWhatsAppMessage(
-                        message,
-                        value
+                    console.log(
+                        "\n------------------------------------------"
+                    );
+
+                    console.log(
+                        "📩 PROCESSING MESSAGE"
+                    );
+
+                    console.log(
+                        "------------------------------------------"
+                    );
+
+
+                    console.log(
+                        "📱 Message ID:",
+                        message.id
+                    );
+
+                    console.log(
+                        "📱 Message type:",
+                        message.type
+                    );
+
+                    console.log(
+                        "📱 Sender:",
+                        message.from
+                    );
+
+
+                    // ==========================================
+                    // VERIFY ADMIN SENDER
+                    // ==========================================
+
+                    const senderNumber =
+                        getSenderNumber(
+                            message
+                        );
+
+
+                    console.log(
+                        "📱 NORMALIZED SENDER:",
+                        senderNumber
+                    );
+
+                    console.log(
+                        "📱 CONFIGURED ADMIN:",
+                        ADMIN_WHATSAPP_NUMBER
+                    );
+
+
+                    if (
+                        ADMIN_WHATSAPP_NUMBER &&
+                        senderNumber !==
+                        ADMIN_WHATSAPP_NUMBER
+                    ) {
+                        console.error(
+                            "❌ Message ignored: sender is not the configured admin number."
+                        );
+
+                        continue;
+                    }
+
+
+                    // ==========================================
+                    // EXTRACT BUTTON PAYLOAD
+                    // ==========================================
+
+                    let buttonPayload =
+                        null;
+
+
+                    // ==========================================
+                    // LEGACY BUTTON MESSAGE
+                    // ==========================================
+
+                    if (
+                        message.type ===
+                        "button"
+                    ) {
+                        buttonPayload =
+                            message.button
+                                ?.payload ||
+                            null;
+
+
+                        console.log(
+                            "📱 LEGACY BUTTON PAYLOAD:",
+                            buttonPayload
+                        );
+                    }
+
+
+                    // ==========================================
+                    // INTERACTIVE BUTTON REPLY
+                    // ==========================================
+
+                    if (
+                        message.type ===
+                        "interactive"
+                    ) {
+                        const interactive =
+                            message.interactive;
+
+
+                        console.log(
+                            "📱 INTERACTIVE TYPE:",
+                            interactive?.type
+                        );
+
+
+                        if (
+                            interactive?.type ===
+                            "button_reply"
+                        ) {
+                            buttonPayload =
+                                interactive
+                                    ?.button_reply
+                                    ?.id ||
+                                interactive
+                                    ?.button_reply
+                                    ?.payload ||
+                                null;
+
+
+                            console.log(
+                                "📱 INTERACTIVE BUTTON ID:",
+                                interactive
+                                    ?.button_reply
+                                    ?.id
+                            );
+
+                            console.log(
+                                "📱 INTERACTIVE BUTTON TITLE:",
+                                interactive
+                                    ?.button_reply
+                                    ?.title
+                            );
+
+                            console.log(
+                                "📱 INTERACTIVE BUTTON PAYLOAD:",
+                                buttonPayload
+                            );
+                        }
+                    }
+
+
+                    // ==========================================
+                    // NO BUTTON
+                    // ==========================================
+
+                    if (
+                        !buttonPayload
+                    ) {
+                        console.log(
+                            "ℹ️ No approval/rejection button payload found."
+                        );
+
+                        continue;
+                    }
+
+
+                    console.log(
+                        "\n🔥🔥🔥 BUTTON PAYLOAD FOUND 🔥🔥🔥"
+                    );
+
+                    console.log(
+                        "🔥 BUTTON PAYLOAD:",
+                        buttonPayload
+                    );
+
+
+                    // ==========================================
+                    // APPROVE PAYMENT
+                    // ==========================================
+
+                    if (
+                        String(
+                            buttonPayload
+                        ).startsWith(
+                            "approve_"
+                        )
+                    ) {
+                        const paymentId =
+                            String(
+                                buttonPayload
+                            ).replace(
+                                "approve_",
+                                ""
+                            );
+
+
+                        console.log(
+                            "\n=========================================="
+                        );
+
+                        console.log(
+                            "💰💰💰 APPROVE BUTTON PRESSED 💰💰💰"
+                        );
+
+                        console.log(
+                            "=========================================="
+                        );
+
+                        console.log(
+                            "💰 PAYMENT ID:",
+                            paymentId
+                        );
+
+                        console.log(
+                            "💰 ADMIN ID:",
+                            null
+                        );
+
+
+                        if (!paymentId) {
+                            console.error(
+                                "❌ Payment ID missing."
+                            );
+
+                            continue;
+                        }
+
+
+                        // ==========================================
+                        // CALL APPROVAL SERVICE
+                        // ==========================================
+
+                        console.log(
+                            "🔥 CALLING approvePaymentById()..."
+                        );
+
+
+                        const result =
+                            await approvePaymentById({
+                                paymentId,
+                                adminId: null,
+                            });
+
+
+                        // ==========================================
+                        // LOG RESULT
+                        // ==========================================
+
+                        console.log(
+                            "\n🔥 APPROVAL SERVICE RESULT:"
+                        );
+
+                        console.log(
+                            JSON.stringify(
+                                result,
+                                null,
+                                2
+                            )
+                        );
+
+
+                        if (
+                            result.success
+                        ) {
+                            console.log(
+                                "✅✅ PAYMENT APPROVED VIA WHATSAPP"
+                            );
+
+                            console.log(
+                                "💰 CREDITED AMOUNT:",
+                                result.creditedAmount
+                            );
+
+                            console.log(
+                                "💰 CREDITED CURRENCY:",
+                                result.creditedCurrency
+                            );
+
+                            console.log(
+                                "💰 EXCHANGE RATE:",
+                                result.exchangeRate
+                            );
+
+                            console.log(
+                                "💰 USER BALANCE:",
+                                result.balance
+                            );
+                        }
+                        else {
+                            console.error(
+                                "❌ PAYMENT APPROVAL FAILED:",
+                                result.message
+                            );
+                        }
+
+
+                        continue;
+                    }
+
+
+                    // ==========================================
+                    // REJECT PAYMENT
+                    // ==========================================
+
+                    if (
+                        String(
+                            buttonPayload
+                        ).startsWith(
+                            "reject_"
+                        )
+                    ) {
+                        const paymentId =
+                            String(
+                                buttonPayload
+                            ).replace(
+                                "reject_",
+                                ""
+                            );
+
+
+                        console.log(
+                            "\n=========================================="
+                        );
+
+                        console.log(
+                            "❌❌❌ REJECT BUTTON PRESSED ❌❌❌"
+                        );
+
+                        console.log(
+                            "=========================================="
+                        );
+
+                        console.log(
+                            "❌ PAYMENT ID:",
+                            paymentId
+                        );
+
+
+                        if (!paymentId) {
+                            console.error(
+                                "❌ Payment ID missing."
+                            );
+
+                            continue;
+                        }
+
+
+                        console.log(
+                            "❌ CALLING rejectPaymentById()..."
+                        );
+
+
+                        const result =
+                            await rejectPaymentById({
+                                paymentId,
+                                adminId: null,
+                                rejectionReason:
+                                    "Rejected via WhatsApp.",
+                            });
+
+
+                        console.log(
+                            "\n❌ REJECTION SERVICE RESULT:"
+                        );
+
+                        console.log(
+                            JSON.stringify(
+                                result,
+                                null,
+                                2
+                            )
+                        );
+
+
+                        if (
+                            result.success
+                        ) {
+                            console.log(
+                                "✅ PAYMENT REJECTED VIA WHATSAPP"
+                            );
+                        }
+                        else {
+                            console.error(
+                                "❌ PAYMENT REJECTION FAILED:",
+                                result.message
+                            );
+                        }
+
+
+                        continue;
+                    }
+
+
+                    // ==========================================
+                    // UNKNOWN BUTTON
+                    // ==========================================
+
+                    console.log(
+                        "ℹ️ Unknown button payload:",
+                        buttonPayload
                     );
                 }
             }
         }
 
 
-        // ------------------------------------------------
-        // 6. ACKNOWLEDGE META
-        // ------------------------------------------------
+        // ==========================================
+        // ALWAYS ACKNOWLEDGE META
+        // ==========================================
 
         console.log(
-            "=========================================="
-        );
-
-        console.log(
-            "✅ WHATSAPP WEBHOOK PROCESSING COMPLETE"
+            "\n📱 Webhook processing finished."
         );
 
         console.log(
-            "=========================================="
+            "📱 Sending HTTP 200 to Meta."
         );
 
-        console.log("");
 
-        return res.sendStatus(200);
-
-    } catch (error) {
-
-        console.error(
-            "=========================================="
-        );
-
-        console.error(
-            "❌ WhatsApp Webhook Handler Error:"
-        );
-
-        console.error(error);
-
-        console.error(
-            "=========================================="
-        );
-
-        if (!res.headersSent) {
-            return res.sendStatus(500);
-        }
-
-        return;
+        return res
+            .sendStatus(200);
     }
-};
 
 
-// ======================================================
-// PROCESS WHATSAPP MESSAGE
-// ======================================================
+    // ==========================================
+    // ERROR
+    // ==========================================
 
-const processWhatsAppMessage = async (
-    message,
-    value
-) => {
-    try {
-
-        console.log("");
-        console.log(
-            "------------------------------------------"
-        );
-
-        console.log(
-            "📨 INCOMING WHATSAPP MESSAGE"
-        );
-
-        console.log(
-            "From:",
-            message?.from
-        );
-
-        console.log(
-            "Type:",
-            message?.type
-        );
-
-        console.log(
-            "Message ID:",
-            message?.id
-        );
-
-        console.log(
-            "------------------------------------------"
-        );
-
-
-        // ==================================================
-        // ADMIN CHECK
-        // ==================================================
-
-        if (
-            !isAdminWhatsAppNumber(
-                message
-            )
-        ) {
-            console.warn(
-                "🚫 Message ignored: sender is NOT admin."
-            );
-
-            return;
-        }
-
-
-        console.log(
-            "✅ ADMIN WHATSAPP MESSAGE VERIFIED"
-        );
-
-
-        // ==================================================
-        // TEXT MESSAGE
-        // ==================================================
-
-        if (
-            message?.type ===
-            "text"
-        ) {
-            console.log(
-                "📝 Admin Text:",
-                message?.text?.body || ""
-            );
-
-            // Future:
-            // whatsappMessageController
-            // whatsappChatController
-
-            return;
-        }
-
-
-        // ==================================================
-        // BUTTON DATA
-        // ==================================================
-
-        let payload = null;
-        let buttonText = null;
-
-
-        // ==================================================
-        // LEGACY BUTTON
-        // ==================================================
-
-        if (
-            message?.type ===
-            "button"
-        ) {
-            buttonText =
-                message?.button?.text;
-
-            payload =
-                message?.button?.payload;
-
-            console.log(
-                "🔘 Button Text:",
-                buttonText
-            );
-
-            console.log(
-                "🔑 Button Payload:",
-                payload
-            );
-        }
-
-
-        // ==================================================
-        // INTERACTIVE BUTTON
-        // ==================================================
-
-        if (
-            message?.type ===
-            "interactive"
-        ) {
-
-            const interactive =
-                message?.interactive;
-
-            console.log(
-                "Interactive Type:",
-                interactive?.type
-            );
-
-
-            if (
-                interactive?.type ===
-                "button_reply"
-            ) {
-
-                buttonText =
-                    interactive
-                        ?.button_reply
-                        ?.title;
-
-                payload =
-                    interactive
-                        ?.button_reply
-                        ?.id;
-
-
-                console.log(
-                    "🔘 Interactive Button:",
-                    buttonText
-                );
-
-                console.log(
-                    "🔑 Interactive Payload:",
-                    payload
-                );
-            }
-        }
-
-
-        // ==================================================
-        // NO PAYLOAD
-        // ==================================================
-
-        if (!payload) {
-            console.log(
-                "ℹ️ No button payload found."
-            );
-
-            return;
-        }
-
-
-        // ==================================================
-        // APPROVE PAYMENT
-        // ==================================================
-
-        if (
-            payload.startsWith(
-                "approve_"
-            )
-        ) {
-
-            const paymentId =
-                payload.substring(
-                    "approve_".length
-                );
-
-
-            if (!paymentId) {
-                console.error(
-                    "❌ Payment ID missing from approve payload."
-                );
-
-                return;
-            }
-
-
-            console.log("");
-            console.log(
-                "=========================================="
-            );
-
-            console.log(
-                "✅ APPROVE BUTTON RECEIVED"
-            );
-
-            console.log(
-                "Payment ID:",
-                paymentId
-            );
-
-            console.log(
-                "Admin:",
-                message?.from
-            );
-
-            console.log(
-                "=========================================="
-            );
-
-
-            // --------------------------------------------
-            // APPROVE PAYMENT
-            // --------------------------------------------
-
-            const result =
-                await approvePaymentById({
-                    paymentId,
-                    adminId: null,
-                });
-
-
-            console.log(
-                "✅ WhatsApp Approval Result:",
-                result
-            );
-
-            return;
-        }
-
-
-        // ==================================================
-        // REJECT PAYMENT
-        // ==================================================
-
-        if (
-            payload.startsWith(
-                "reject_"
-            )
-        ) {
-
-            const paymentId =
-                payload.substring(
-                    "reject_".length
-                );
-
-
-            if (!paymentId) {
-                console.error(
-                    "❌ Payment ID missing from reject payload."
-                );
-
-                return;
-            }
-
-
-            console.log("");
-            console.log(
-                "=========================================="
-            );
-
-            console.log(
-                "❌ REJECT BUTTON RECEIVED"
-            );
-
-            console.log(
-                "Payment ID:",
-                paymentId
-            );
-
-            console.log(
-                "Admin:",
-                message?.from
-            );
-
-            console.log(
-                "=========================================="
-            );
-
-
-            // --------------------------------------------
-            // REJECT PAYMENT
-            // --------------------------------------------
-
-            const result =
-                await rejectPaymentById({
-                    paymentId,
-                    adminId: null,
-                    rejectionReason:
-                        "Rejected via WhatsApp.",
-                });
-
-
-            console.log(
-                "❌ WhatsApp Rejection Result:",
-                result
-            );
-
-            return;
-        }
-
-
-        // ==================================================
-        // UNKNOWN PAYLOAD
-        // ==================================================
-
-        console.warn(
-            "⚠️ Unknown WhatsApp button payload:",
-            payload
-        );
-
-    } catch (error) {
-
+    catch (error) {
         console.error(
-            "=========================================="
+            "\n❌❌❌ WHATSAPP WEBHOOK ERROR ❌❌❌"
         );
 
         console.error(
-            "❌ Process WhatsApp Message Error:"
+            error
         );
 
-        console.error(error);
 
-        console.error(
-            "=========================================="
-        );
+        // Meta expects a response.
+        // We still return 200 to avoid
+        // unnecessary repeated webhook delivery.
+        return res
+            .sendStatus(200);
     }
 };
