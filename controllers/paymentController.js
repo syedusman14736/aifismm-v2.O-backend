@@ -27,25 +27,25 @@ const PAYMENT_METHODS = {
     easypaisa: {
         region: "pakistan",
         currency: "PKR",
-        minAmount: 100,
+        minAmount: 10,
     },
 
     jazzcash: {
         region: "pakistan",
         currency: "PKR",
-        minAmount: 100,
+        minAmount: 10,
     },
 
     bank: {
         region: "pakistan",
         currency: "PKR",
-        minAmount: 100,
+        minAmount: 10,
     },
 
     other: {
         region: "international",
         currency: "USD",
-        minAmount: 0.01,
+        minAmount: 1,
     },
 };
 

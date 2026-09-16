@@ -36,17 +36,7 @@ export const verifyWhatsAppWebhook = (
     req,
     res
 ) => {
-    console.log(
-        "\n=========================================="
-    );
 
-    console.log(
-        "📱 WHATSAPP WEBHOOK VERIFICATION"
-    );
-
-    console.log(
-        "=========================================="
-    );
 
 
     const mode =
@@ -59,26 +49,11 @@ export const verifyWhatsAppWebhook = (
         req.query["hub.challenge"];
 
 
-    console.log(
-        "📱 Mode:",
-        mode
-    );
-
-    console.log(
-        "📱 Verify token received:",
-        token
-            ? "YES"
-            : "NO"
-    );
-
 
     if (
         mode === "subscribe" &&
         token === WHATSAPP_VERIFY_TOKEN
     ) {
-        console.log(
-            "✅ WhatsApp webhook verified."
-        );
 
         return res
             .status(200)
